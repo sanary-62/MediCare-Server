@@ -1,3 +1,4 @@
+
 const express = require("express");
 const cors = require("cors");
 const dotenv = require("dotenv");
@@ -29,7 +30,55 @@ async function run() {
 
     const db = client.db("medi_care");
     const campsCollection = db.collection("camps");
-    const participantsCollection = db.collection("participants");  // <-- define here
+    const participantsCollection = db.collection("participants");
+    const paymentHistoryCollection = db.collection("paymentHistory");
+    const feedbackCollection = db.collection("feedback");
+
+
+    app.put('/participants/:id', async (req, res) => {
+  const id = req.params.id;
+  const { participantName, image, contact } = req.body;
+
+  try {
+    const result = await participantsCollection.updateOne(
+      { _id: new ObjectId(id) },
+      { $set: { participantName, image, contact } }
+    );
+
+    // Send the entire result object, which includes modifiedCount
+    res.send(result);
+  } catch (err) {
+    console.error(err);
+    res.status(500).send({ message: "Failed to update participant", error: err });
+  }
+});
+
+
+        
+    app.post('/feedback', async (req, res) => {
+  try {
+    const feedbackData = req.body;
+    const result = await feedbackCollection.insertOne(feedbackData);
+    return res.status(201).send({ message: "Feedback saved", insertedId: result.insertedId }); // added return
+  } catch (err) {
+    console.error(err);
+    return res.status(500).send({ message: "Failed to save feedback", error: err }); // added return
+  }
+});
+
+
+
+    app.get('/feedback', async (req, res) => {
+  try {
+    const feedbackList = await feedbackCollection.find().toArray();
+    res.send(feedbackList);
+  } catch (err) {
+    res.status(500).send({ message: "Failed to fetch feedback", error: err });
+  }
+});
+
+
+
 
     app.get("/camps", async (req, res) => {
       const camps = await campsCollection.find().toArray();
@@ -75,7 +124,6 @@ async function run() {
       }
     });
 
-    // Move this inside run, after participantsCollection is defined
     app.post("/participants", async (req, res) => {
       try {
         const newParticipant = req.body;
@@ -83,6 +131,60 @@ async function run() {
         res.send(result);
       } catch (error) {
         res.status(500).send({ message: "Failed to register participant", error });
+      }
+    });
+
+    app.get('/participants', async (req, res) => {
+      const email = req.query.email;
+      if (!email) return res.status(400).send({ message: "Email is required" });
+
+      try {
+        const result = await participantsCollection.find({ participantEmail: email }).toArray();
+        res.send(result);
+      } catch (err) {
+        res.status(500).send({ message: "Failed to fetch participants", error: err });
+      }
+    });
+
+    app.delete('/participants/:id', async (req, res) => {
+      const id = req.params.id;
+      try {
+        const result = await participantsCollection.deleteOne({ _id: new ObjectId(id) });
+        res.send(result);
+      } catch (err) {
+        res.status(500).send({ message: "Failed to cancel participation", error: err });
+      }
+    });
+
+    // PATCH to update participant payment status, confirmation, and transactionId
+    app.patch('/participants/payment/:id', async (req, res) => {
+      const id = req.params.id;
+      const { paymentStatus, confirmationStatus, transactionId } = req.body;
+
+      try {
+        const result = await participantsCollection.updateOne(
+          { _id: new ObjectId(id) },
+          { $set: { paymentStatus, confirmationStatus, transactionId } }
+        );
+        if (result.matchedCount === 0) {
+          return res.status(404).send({ message: "Participant not found" });
+        }
+        res.send({ message: "Payment updated" });
+      } catch (err) {
+        console.error(err);
+        res.status(500).send({ message: "Failed to update payment", error: err });
+      }
+    });
+
+    // POST payment history record
+    app.post('/payment-history', async (req, res) => {
+      const paymentData = req.body;
+      try {
+        const result = await paymentHistoryCollection.insertOne(paymentData);
+        res.status(201).send({ message: "Payment history saved", insertedId: result.insertedId });
+      } catch (err) {
+        console.error(err);
+        res.status(500).send({ message: "Failed to save payment history", error: err });
       }
     });
 
@@ -95,6 +197,10 @@ async function run() {
 }
 run().catch(console.dir);
 
+
+
+
+
 // Default route
 app.get("/", (req, res) => {
   res.send("MediCare Server is Running");
@@ -103,3 +209,7 @@ app.get("/", (req, res) => {
 app.listen(port, () => {
   console.log(`Server is running on port ${port}`);
 });
+
+
+
+
