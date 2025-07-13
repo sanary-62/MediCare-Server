@@ -86,15 +86,18 @@ async function run() {
     });
 
     app.post("/camps", async (req, res) => {
-      try {
-        const newCamp = req.body;
-        console.log("Received camp:", newCamp);
-        const result = await campsCollection.insertOne(newCamp);
-        res.send(result);
-      } catch (error) {
-        res.status(500).send({ message: "Failed to add camp", error });
-      }
-    });
+  try {
+    const newCamp = req.body;
+    if (newCamp.date) {
+      newCamp.date = new Date(newCamp.date); 
+    }
+    const result = await campsCollection.insertOne(newCamp);
+    res.send(result);
+  } catch (error) {
+    res.status(500).send({ message: "Failed to add camp", error });
+  }
+});
+
 
     app.get("/camps/:id", async (req, res) => {
       const id = req.params.id;
