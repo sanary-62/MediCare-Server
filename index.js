@@ -166,6 +166,36 @@ async function run() {
       }
     });
 
+
+
+    app.get("/payment-history", async (req, res) => {
+  const email = req.query.email;
+  console.log("Fetching payment history for email:", email);
+  console.log("paymentHistoryCollection is", paymentHistoryCollection);
+
+  if (!paymentHistoryCollection) {
+    console.error("paymentHistoryCollection is not initialized!");
+    return res.status(500).send({ message: "Database collection not ready" });
+  }
+
+  const filter = email ? { email } : {};
+
+  try {
+    const history = await paymentHistoryCollection
+      .find(filter)
+      .sort({ date: -1 }) 
+      .toArray();
+
+    console.log("Payment history found:", history.length);
+    res.send(history);
+  } catch (error) {
+    console.error("Error fetching payment history:", error);
+    res.status(500).send({ message: "Failed to load payment history", error });
+  }
+});
+
+
+
     app.post('/payment-history', async (req, res) => {
       const paymentData = req.body;
       try {
@@ -177,16 +207,9 @@ async function run() {
       }
     });
 
-    await client.db("admin").command({ ping: 1 });
-    console.log("Pinged your deployment. You successfully connected to MongoDB!");
-  } finally {
-    // Optionally close the connection
-  }
-}
 
 
-// Save payment and update participant after successful payment
-app.post("/payment-success", async (req, res) => {
+    app.post("/payment-success", async (req, res) => {
   const {
     transactionId,
     email,
@@ -201,27 +224,31 @@ app.post("/payment-success", async (req, res) => {
   console.log("Received payment info:", req.body);
 
 const found = await participantsCollection.findOne({ participantEmail: email, campId });
+
+
 console.log("Matching participant:", found);
 
 
   try {
-    // Step 1: Update the participant payment status
-    const updateResult = await participantsCollection.updateOne(
-      { participantEmail: email, campId: campId },
-      {
-        $set: {
-          paymentStatus: "paid",
-          confirmationStatus: "Confirmed",
-          transactionId: transactionId
-        }
-      }
-    );
+    
+  const updateResult = await participantsCollection.updateOne(
+  { participantEmail: email, campId },
+  {
+    $set: {
+      paymentStatus: "paid",
+      confirmationStatus: "Confirmed",
+      transactionId: transactionId
+    }
+  }
+);
+
 
     if (updateResult.modifiedCount === 0) {
       return res.status(404).send({ message: "Participant not found" });
     }
 
-    // Step 2: Save payment history
+    console.log("Looking for participant with:", { email, campId });
+
     const paymentHistory = {
       transactionId,
       email,
@@ -236,6 +263,7 @@ console.log("Matching participant:", found);
 
     res.send({
       message: "Payment processed and recorded successfully",
+       transactionId, 
       updateResult,
       insertedId: saveResult.insertedId
     });
@@ -246,29 +274,25 @@ console.log("Matching participant:", found);
 });
 
 
-
-app.get("/payment-history", async (req, res) => {
-  const email = req.query.email;
-  const filter = email ? { email } : {};
-
-  try {
-    const history = await paymentHistoryCollection
-      .find(filter)
-      .sort({ date: -1 }) // latest first
-      .toArray();
-
-    res.send(history);
-  } catch (error) {
-    console.error("Error fetching payment history:", error);
-    res.status(500).send({ message: "Failed to load payment history", error });
+    await client.db("admin").command({ ping: 1 });
+    console.log("Pinged your deployment. You successfully connected to MongoDB!");
+  } finally {
+    // Optionally close the connection
   }
-});
+}
+
+
+
+
+
+
+
 
 
 app.post('/create-payment-intent', async (req, res) => {
   const { amount } = req.body;
 
-  // ✅ Validation
+  
   if (!amount || typeof amount !== 'number' || isNaN(amount) || amount < 50) {
     return res.status(400).send({ error: "Invalid amount. Must be a number >= 50 cents." });
   }
@@ -282,18 +306,22 @@ app.post('/create-payment-intent', async (req, res) => {
 
     res.send({ clientSecret: paymentIntent.client_secret });
   } catch (err) {
-    console.error("🔥 Stripe error:", err);
+    console.error(" Stripe error:", err);
     res.status(500).send({ error: err.message });
   }
 });
 
 
-run().catch(console.dir);
+async function startServer() {
+  await run();
 
-app.get("/", (req, res) => {
-  res.send("MediCare Server is Running");
-});
+  app.get("/", (req, res) => {
+    res.send("MediCare Server is Running");
+  });
 
-app.listen(port, () => {
-  console.log(`Server is running on port ${port}`);
-});
+  app.listen(port, () => {
+    console.log(`Server is running on port ${port}`);
+  });
+}
+
+startServer().catch(console.dir);
