@@ -14,16 +14,11 @@ const port = process.env.PORT || 5000;
 app.use(cors());
 app.use(express.json());
 
-
-
-
 const serviceAccount = require("./firebase-admin-key.json");
 
 admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount)
+  credential: admin.credential.cert(serviceAccount),
 });
-
-
 
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@sanary.5oi2id1.mongodb.net/?retryWrites=true&w=majority&appName=Sanary`;
 
@@ -43,20 +38,19 @@ async function run() {
     const campsCollection = db.collection("camps");
     const participantsCollection = db.collection("participants");
     const usersCollection = db.collection("users");
-
     const paymentHistoryCollection = db.collection("paymentHistory");
     const feedbackCollection = db.collection("feedback");
+    const organizersCollection = db.collection("organizers");
 
-
-//custom middleware
+    //custom middleware
     const verifyFBToken = async (req, res, next) => {
       const authHeader = req.headers.Authorization;
-      if (!authHeader){
-        return res.status(401).send ({message: 'unauthorized access' })
+      if (!authHeader) {
+        return res.status(401).send({ message: "unauthorized access" });
       }
-      const token = authHeader.split(' ')[1];
-      if(!token) {
-        return res.status(401).send ({message: 'unauthorized access' })
+      const token = authHeader.split(" ")[1];
+      if (!token) {
+        return res.status(401).send({ message: "unauthorized access" });
       }
 
       //verify the token
@@ -64,20 +58,18 @@ async function run() {
       next();
     };
 
-
-
-
-
     app.post("/users", async (req, res) => {
-       const email = req.body.email;
-       const userExists = await usersCollection.findOne({ email })
-       if (userExists){
-        return res.status(200).send ({message: 'User already exist', inserted: false});
-       }
-       const user = req.body;
-       const result = await usersCollection.insertOne(user);
-       res.send(result);
-    })
+      const email = req.body.email;
+      const userExists = await usersCollection.findOne({ email });
+      if (userExists) {
+        return res
+          .status(200)
+          .send({ message: "User already exist", inserted: false });
+      }
+      const user = req.body;
+      const result = await usersCollection.insertOne(user);
+      res.send(result);
+    });
 
     app.put("/participants/:id", async (req, res) => {
       const id = req.params.id;
@@ -111,6 +103,46 @@ async function run() {
       }
     });
 
+
+    app.post("/organizers", async (req, res) => {
+  try {
+    const newOrganizer = {
+  ...req.body,
+  status: (req.body.status || 'pending').toLowerCase()
+};
+
+    const result = await organizersCollection.insertOne(newOrganizer);
+    res.send({ insertedId: result.insertedId });
+  } catch (err) {
+    console.error(err);
+    res.status(500).send({ message: "Failed to save organizer", error: err });
+  }
+});
+
+
+app.get("/organizers", async (req, res) => {
+  try {
+    const { status } = req.query;
+    let query = {};
+    if (status) {
+      if (status.toLowerCase() === "pending") {
+        query = { $or: [ { status: { $regex: /^pending$/i } }, { status: { $exists: false } } ] };
+      } else {
+        query = { status: { $regex: new RegExp(`^${status}$`, 'i') } };
+      }
+    }
+    const result = await organizersCollection.find(query).toArray();
+    res.send(result);
+  } catch (err) {
+    console.error("Error fetching organizers:", err);
+    res.status(500).send({ message: "Failed to fetch organizers", error: err });
+  }
+});
+
+
+
+
+
     app.get("/feedback", async (req, res) => {
       try {
         const feedbackList = await feedbackCollection.find().toArray();
@@ -130,7 +162,7 @@ async function run() {
     app.post("/camps", async (req, res) => {
       try {
         const newCamp = req.body;
-        
+
         if (newCamp.date) {
           newCamp.date = new Date(newCamp.date);
         }
@@ -267,12 +299,10 @@ async function run() {
       const paymentData = req.body;
       try {
         const result = await paymentHistoryCollection.insertOne(paymentData);
-        res
-          .status(201)
-          .send({
-            message: "Payment history saved",
-            insertedId: result.insertedId,
-          });
+        res.status(201).send({
+          message: "Payment history saved",
+          insertedId: result.insertedId,
+        });
       } catch (err) {
         console.error(err);
         res
