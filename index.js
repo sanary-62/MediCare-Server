@@ -44,22 +44,40 @@ async function run() {
 
     //custom middleware
     const verifyFBToken = async (req, res, next) => {
-      const authHeader = req.headers.Authorization;
-      if (!authHeader) {
-        return res.status(401).send({ message: "unauthorized access" });
-      }
-      const token = authHeader.split(" ")[1];
-      if (!token) {
-        return res.status(401).send({ message: "unauthorized access" });
-      }
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith("Bearer ")) {
+    return res.status(401).send({ message: "Unauthorized access" });
+  }
 
-      //verify the token
+  const token = authHeader.split(" ")[1];
 
-      next();
-    };
+  try {
+    const decoded = await admin.auth().verifyIdToken(token);
+    req.decoded = decoded; // this is needed in verifyAdmin
+    next();
+  } catch (err) {
+    return res.status(401).send({ message: "Invalid token", error: err.message });
+  }
+};
 
 
-app.get('/users/search', async (req, res) => {
+
+const verifyAdmin = async (req, res, next) => {
+  try {
+    const email = req.decoded.email;
+    const user = await usersCollection.findOne({ email });
+    if (!user || user.role !== 'admin') {
+      return res.status(403).send({ message: 'Forbidden access' });
+    }
+    next();
+  } catch (err) {
+    return res.status(500).send({ message: 'Admin verification failed', error: err });
+  }
+};
+
+
+
+app.get('/users/search', verifyFBToken, verifyAdmin, async (req, res) => {
   const email = req.query.email;
   if (!email) return res.status(400).send({ message: 'Email is required' });
 
@@ -76,7 +94,7 @@ app.get('/users/search', async (req, res) => {
 
 
 // Update user role (admin or remove admin)
-app.patch('/users/role/:email', async (req, res) => {
+app.patch('/users/role/:email', verifyFBToken, verifyAdmin, async (req, res) => {
   const email = req.params.email;
   const { role } = req.body;
 
@@ -92,6 +110,29 @@ app.patch('/users/role/:email', async (req, res) => {
     res.send({ message: 'User role updated', modifiedCount: result.modifiedCount });
   } catch (err) {
     res.status(500).send({ message: 'Failed to update role', error: err });
+  }
+});
+
+
+// Check if user is admin
+app.get('/users/is-admin/:email', async (req, res) => {
+  const email = req.params.email;
+
+  if (!email) {
+    return res.status(400).send({ message: 'Email is required' });
+  }
+
+  try {
+    const user = await usersCollection.findOne({ email });
+
+    if (!user) {
+      return res.status(404).send({ message: 'User not found' });
+    }
+
+    const isAdmin = user.role === 'admin';
+    res.send({ isAdmin });
+  } catch (err) {
+    res.status(500).send({ message: 'Failed to check role', error: err });
   }
 });
 
@@ -160,7 +201,7 @@ app.patch('/users/role/:email', async (req, res) => {
 });
 
 
-app.get("/organizers", async (req, res) => {
+app.get("/organizers", verifyFBToken, verifyAdmin, async (req, res) => {
   try {
     const { status } = req.query;
     let query = {};
@@ -179,7 +220,7 @@ app.get("/organizers", async (req, res) => {
   }
 });
 
-app.patch("/organizers/:id", async (req, res) => {
+app.patch("/organizers/:id", verifyFBToken, verifyAdmin, async (req, res) => {
   const id = req.params.id;
   const { status } = req.body;
 
@@ -238,7 +279,14 @@ app.patch("/organizers/:id", async (req, res) => {
       res.send(camps);
     });
 
-    app.post("/camps", async (req, res) => {
+    app.post("/camps", verifyFBToken, async (req, res) => {
+  const { email } = req.decoded;
+  const user = await usersCollection.findOne({ email });
+
+  if (!user || (user.role !== 'organizer' && user.role !== 'admin')) {
+    return res.status(403).send({ message: 'Only organizers or admins can create camps' });
+  }
+
       try {
         const newCamp = req.body;
 
@@ -310,7 +358,7 @@ app.patch("/organizers/:id", async (req, res) => {
       }
     });
 
-    app.delete("/participants/:id", async (req, res) => {
+    app.delete("/participants/:id", verifyFBToken, verifyAdmin, async (req, res) => {
       const id = req.params.id;
       try {
         const result = await participantsCollection.deleteOne({
