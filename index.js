@@ -58,6 +58,46 @@ async function run() {
       next();
     };
 
+
+app.get('/users/search', async (req, res) => {
+  const email = req.query.email;
+  if (!email) return res.status(400).send({ message: 'Email is required' });
+
+  try {
+    // Use case-insensitive regex to match partial email
+    const user = await usersCollection.findOne({ email: { $regex: email, $options: 'i' } });
+
+    if (!user) return res.status(404).send({ message: 'User not found' });
+    res.send(user);
+  } catch (err) {
+    res.status(500).send({ message: 'Error searching user', error: err });
+  }
+});
+
+
+// Update user role (admin or remove admin)
+app.patch('/users/role/:email', async (req, res) => {
+  const email = req.params.email;
+  const { role } = req.body;
+
+  if (!email || !role) {
+    return res.status(400).send({ message: 'Email and role are required' });
+  }
+
+  try {
+    const result = await usersCollection.updateOne(
+      { email },
+      { $set: { role } }
+    );
+    res.send({ message: 'User role updated', modifiedCount: result.modifiedCount });
+  } catch (err) {
+    res.status(500).send({ message: 'Failed to update role', error: err });
+  }
+});
+
+
+
+
     app.post("/users", async (req, res) => {
       const email = req.body.email;
       const userExists = await usersCollection.findOne({ email });
@@ -139,6 +179,45 @@ app.get("/organizers", async (req, res) => {
   }
 });
 
+app.patch("/organizers/:id", async (req, res) => {
+  const id = req.params.id;
+  const { status } = req.body;
+
+  if (!status) {
+    return res.status(400).send({ message: "Status is required" });
+  }
+
+  try {
+    // Step 1: Get the organizer first
+    const organizer = await organizersCollection.findOne({ _id: new ObjectId(id) });
+    if (!organizer) {
+      return res.status(404).send({ message: "Organizer not found" });
+    }
+
+    // Step 2: Update organizer status
+    const result = await organizersCollection.updateOne(
+      { _id: new ObjectId(id) },
+      { $set: { status: status.toLowerCase() } }
+    );
+
+    // Step 3: If accepted, update user role
+    if (status === 'accept') {
+      const userQuery = { email: organizer.email };
+      const userUpdatedDoc = {
+        $set: {
+          role: 'organizer'
+        }
+      };
+      const roleResult = await usersCollection.updateOne(userQuery, userUpdatedDoc);
+      console.log("User role update:", roleResult.modifiedCount);
+    }
+
+    res.send({ message: "Status updated", modifiedCount: result.modifiedCount });
+  } catch (err) {
+    console.error("Failed to update organizer status:", err);
+    res.status(500).send({ message: "Failed to update status", error: err });
+  }
+});
 
 
 
