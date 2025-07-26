@@ -138,36 +138,148 @@ app.get('/users/is-admin/:email', async (req, res) => {
 
 
 
+// existing code above remains unchanged
 
-    app.post("/users", async (req, res) => {
-      const email = req.body.email;
-      const userExists = await usersCollection.findOne({ email });
-      if (userExists) {
-        return res
-          .status(200)
-          .send({ message: "User already exist", inserted: false });
-      }
-      const user = req.body;
-      const result = await usersCollection.insertOne(user);
-      res.send(result);
-    });
+// --- Add this below your other routes inside `run()` ---
 
-    app.put("/participants/:id", async (req, res) => {
-      const id = req.params.id;
-      const { participantName, image, contact } = req.body;
-      try {
-        const result = await participantsCollection.updateOne(
-          { _id: new ObjectId(id) },
-          { $set: { participantName, image, contact } }
-        );
-        res.send(result);
-      } catch (err) {
-        console.error(err);
-        res
-          .status(500)
-          .send({ message: "Failed to update participant", error: err });
+// 1. GET Camps by Organizer
+app.get("/my-camps", verifyFBToken, async (req, res) => {
+  const email = req.query.email;
+  if (!email) return res.status(400).send({ message: "Email is required" });
+  try {
+    const camps = await campsCollection.find({ organizerEmail: email }).toArray();
+    res.send(camps);
+  } catch (err) {
+    res.status(500).send({ message: "Failed to fetch camps", error: err });
+  }
+});
+
+// 2. PATCH Update a Camp
+app.patch("/update-camp/:id", verifyFBToken, async (req, res) => {
+  const id = req.params.id;
+  const updatedData = req.body;
+
+  try {
+    console.log("Incoming update for camp ID:", id);
+    console.log("Update data:", updatedData);
+
+    if (!ObjectId.isValid(id)) {
+      return res.status(400).send({ message: "Invalid camp ID format" });
+    }
+
+    const result = await campsCollection.updateOne(
+      { _id: new ObjectId(id) },
+      { $set: updatedData }
+    );
+
+    console.log("Update result:", result);
+
+    res.send(result);
+  } catch (err) {
+    console.error("Failed to update camp:", err);
+    res.status(500).send({ message: "Failed to update camp", error: err.message });
+  }
+});
+
+
+// 3. DELETE Camp
+app.delete("/delete-camp/:id", verifyFBToken, async (req, res) => {
+  const id = req.params.id;
+  try {
+    const result = await campsCollection.deleteOne({ _id: new ObjectId(id) });
+    res.send(result);
+  } catch (err) {
+    res.status(500).send({ message: "Failed to delete camp", error: err });
+  }
+});
+
+// 4. GET Registered Camps for Organizer
+app.get("/registered-camps", verifyFBToken, async (req, res) => {
+  const organizerEmail = req.query.organizerEmail;
+  if (!organizerEmail) {
+    return res.status(400).send({ message: "Organizer email is required" });
+  }
+
+  try {
+    const camps = await campsCollection.find({ organizerEmail }).toArray();
+    const campIds = camps.map((camp) => String(camp._id));
+
+const participants = await participantsCollection
+  .find({ campId: { $in: campIds } })
+  .toArray();
+
+
+    res.send(participants);
+  } catch (err) {
+    res.status(500).send({ message: "Failed to fetch registered camps", error: err });
+  }
+});
+
+// 5. PATCH Confirm Registration
+app.patch("/confirm-registration/:id", verifyFBToken, async (req, res) => {
+  const id = req.params.id;
+  try {
+    const result = await participantsCollection.updateOne(
+      { _id: new ObjectId(id) },
+      { $set: { confirmationStatus: "Confirmed" } }
+    );
+    res.send(result);
+  } catch (err) {
+    res.status(500).send({ message: "Failed to confirm registration", error: err });
+  }
+});
+
+// 6. DELETE Cancel Registration
+app.delete("/cancel-registration/:id", verifyFBToken, async (req, res) => {
+  const id = req.params.id;
+  try {
+    const result = await participantsCollection.deleteOne({ _id: new ObjectId(id) });
+    res.send(result);
+  } catch (err) {
+    res.status(500).send({ message: "Failed to cancel registration", error: err });
+  }
+});
+
+
+
+
+app.post("/users", async (req, res) => {
+  const { email, name } = req.body;
+
+  const userExists = await usersCollection.findOne({ email });
+  if (userExists) {
+    return res.status(200).send({ message: "User already exists", inserted: false });
+  }
+
+  const user = { email, name: name || "Unknown" };
+  const result = await usersCollection.insertOne(user);
+  res.send(result);
+});
+
+
+   app.put("/participants/:id", async (req, res) => {
+  const id = req.params.id;
+  const { name, image, contact, email } = req.body;
+
+  try {
+    const result = await usersCollection.updateOne(
+      { _id: new ObjectId(id) },
+      {
+        $set: {
+          participantName: name, 
+          image,
+          contact,
+          email
+        }
       }
-    });
+    );
+    res.send(result);
+  } catch (err) {
+    console.error(err);
+    res.status(500).send({ message: "Failed to update participant", error: err });
+  }
+});
+
 
     app.post("/feedback", async (req, res) => {
       try {
@@ -185,20 +297,30 @@ app.get('/users/is-admin/:email', async (req, res) => {
     });
 
 
-    app.post("/organizers", async (req, res) => {
+   app.post("/organizers", async (req, res) => {
   try {
+    const { email, ...rest } = req.body;
+
+    // Get name from users collection using email
+    const user = await usersCollection.findOne({ email });
+console.log("Fetched user for organizer:", user);
+
+
     const newOrganizer = {
-  ...req.body,
-  status: (req.body.status || 'pending').toLowerCase()
-};
+      email,
+      ...rest,
+      name, // Include the name here
+      status: (req.body.status || 'pending').toLowerCase()
+    };
 
     const result = await organizersCollection.insertOne(newOrganizer);
     res.send({ insertedId: result.insertedId });
   } catch (err) {
-    console.error(err);
+    console.error("Error inserting organizer:", err);
     res.status(500).send({ message: "Failed to save organizer", error: err });
   }
 });
+
 
 
 app.get("/organizers", verifyFBToken, verifyAdmin, async (req, res) => {
@@ -213,12 +335,16 @@ app.get("/organizers", verifyFBToken, verifyAdmin, async (req, res) => {
       }
     }
     const result = await organizersCollection.find(query).toArray();
+
+    console.log("Fetched organizers:", result.map(o => ({ id: o._id, name: o.name, participantName: o.participantName })));
+
     res.send(result);
   } catch (err) {
     console.error("Error fetching organizers:", err);
     res.status(500).send({ message: "Failed to fetch organizers", error: err });
   }
 });
+
 
 app.patch("/organizers/:id", verifyFBToken, verifyAdmin, async (req, res) => {
   const id = req.params.id;
@@ -342,21 +468,19 @@ app.patch("/organizers/:id", verifyFBToken, verifyAdmin, async (req, res) => {
       }
     });
 
-    app.get("/participants", async (req, res) => {
-      const email = req.query.email;
-      if (!email) return res.status(400).send({ message: "Email is required" });
+   app.get("/participants", async (req, res) => {
+  const email = req.query.email;
+  if (!email) return res.status(400).send({ message: "Email is required" });
 
-      try {
-        const result = await participantsCollection
-          .find({ participantEmail: email })
-          .toArray();
-        res.send(result);
-      } catch (err) {
-        res
-          .status(500)
-          .send({ message: "Failed to fetch participants", error: err });
-      }
-    });
+  try {
+    const query = { email: { $regex: `^${email}$`, $options: "i" } };
+    const result = await usersCollection.find(query).toArray();
+    res.send(result);
+  } catch (err) {
+    res.status(500).send({ message: "Failed to fetch participants", error: err });
+  }
+});
+
 
     app.delete("/participants/:id", verifyFBToken, verifyAdmin, async (req, res) => {
       const id = req.params.id;
@@ -452,7 +576,7 @@ app.patch("/organizers/:id", verifyFBToken, verifyAdmin, async (req, res) => {
       console.log("Received payment info:", req.body);
 
       const found = await participantsCollection.findOne({
-        participantEmail: email,
+       email,
         campId,
       });
 
@@ -460,7 +584,7 @@ app.patch("/organizers/:id", verifyFBToken, verifyAdmin, async (req, res) => {
 
       try {
         const updateResult = await participantsCollection.updateOne(
-          { participantEmail: email, campId },
+          { email, campId },
           {
             $set: {
               paymentStatus: "paid",
