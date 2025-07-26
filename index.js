@@ -77,7 +77,7 @@ const verifyAdmin = async (req, res, next) => {
 
 
 
-app.get('/users/search', verifyFBToken, verifyAdmin, async (req, res) => {
+app.get('/users/search', verifyFBToken, async (req, res) => {
   const email = req.query.email;
   if (!email) return res.status(400).send({ message: 'Email is required' });
 
@@ -193,27 +193,49 @@ app.delete("/delete-camp/:id", verifyFBToken, async (req, res) => {
   }
 });
 
-// 4. GET Registered Camps for Organizer
-app.get("/registered-camps", verifyFBToken, async (req, res) => {
-  const organizerEmail = req.query.organizerEmail;
-  if (!organizerEmail) {
-    return res.status(400).send({ message: "Organizer email is required" });
+
+
+
+app.get('/registered-camps', async (req, res) => {
+  const email = req.query.organizerEmail;
+   const page = parseInt(req.query.page) || 1;
+  const limit = parseInt(req.query.limit) || 5;
+  const skip = (page - 1) * limit;
+
+  if (!email) {
+    return res.status(400).send({ message: 'Missing organizer email' });
   }
 
   try {
-    const camps = await campsCollection.find({ organizerEmail }).toArray();
-    const campIds = camps.map((camp) => String(camp._id));
+    
+    const camps = await campsCollection.find({  }).toArray();
 
-const participants = await participantsCollection
-  .find({ campId: { $in: campIds } })
-  .toArray();
+    const campIds = camps.map(camp => camp._id.toString());
+
+    console.log("Camps found:", camps.length, "Camp IDs:", campIds);
+
+     const totalItems = await participantsCollection.countDocuments({ campId: { $in: campIds } });
 
 
-    res.send(participants);
-  } catch (err) {
-    res.status(500).send({ message: "Failed to fetch registered camps", error: err });
+
+    const participants = await participantsCollection
+      .find({ campId: { $in: campIds } })
+       .skip(skip)
+      .limit(limit)
+      .toArray();
+
+      const totalPages = Math.ceil(totalItems / limit);
+
+    res.send({registrations:participants, totalPages: participants.length, currentPage: page,
+      totalItems: totalItems});
+  } catch (error) {
+    console.error('Error fetching registered participants:', error);
+    res.status(500).send({ message: 'Internal Server Error' });
   }
 });
+
+
+
 
 // 5. PATCH Confirm Registration
 app.patch("/confirm-registration/:id", verifyFBToken, async (req, res) => {
@@ -400,10 +422,28 @@ app.patch("/organizers/:id", verifyFBToken, verifyAdmin, async (req, res) => {
       }
     });
 
-    app.get("/camps", async (req, res) => {
-      const camps = await campsCollection.find().toArray();
-      res.send(camps);
+   app.get("/camps", async (req, res) => {
+  const page = parseInt(req.query.page) || 1;   // default page 1
+  const limit = parseInt(req.query.limit) || 10; // default 10 items per page
+  const skip = (page - 1) * limit;
+
+  try {
+    const totalItems = await campsCollection.countDocuments();
+    const camps = await campsCollection.find().skip(skip).limit(limit).toArray();
+
+    const totalPages = Math.ceil(totalItems / limit);
+
+    res.send({
+      camps,
+      totalPages,
+      currentPage: page,
+      totalItems
     });
+  } catch (err) {
+    res.status(500).send({ message: "Failed to fetch camps", error: err.message });
+  }
+});
+
 
     app.post("/camps", verifyFBToken, async (req, res) => {
   const { email } = req.decoded;
@@ -470,16 +510,48 @@ app.patch("/organizers/:id", verifyFBToken, verifyAdmin, async (req, res) => {
 
    app.get("/participants", async (req, res) => {
   const email = req.query.email;
+  const search = req.query.search || '';
+  const page = parseInt(req.query.page) || 1;    
+  const limit = parseInt(req.query.limit) || 10;   
+  const skip = (page - 1) * limit;
+
+   const query = {
+    email: email, 
+    campName: { $regex: search, $options: 'i' } 
+  };
+
   if (!email) return res.status(400).send({ message: "Email is required" });
 
   try {
+    
     const query = { email: { $regex: `^${email}$`, $options: "i" } };
-    const result = await usersCollection.find(query).toArray();
-    res.send(result);
+
+    
+    const total = await participantsCollection.countDocuments(query);
+
+     const result = await participantsCollection
+
+    
+    const participants = await participantsCollection
+      .find(query)
+      .skip(skip)
+      .limit(limit)
+      .toArray();
+
+    
+    const totalPages = Math.ceil(total / limit);
+
+    res.send({
+      participants,   
+      totalPages,
+      currentPage: page,
+      totalItems: total,
+    });
   } catch (err) {
     res.status(500).send({ message: "Failed to fetch participants", error: err });
   }
 });
+
 
 
     app.delete("/participants/:id", verifyFBToken, verifyAdmin, async (req, res) => {
