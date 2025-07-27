@@ -1,3 +1,4 @@
+
 const express = require("express");
 const cors = require("cors");
 const dotenv = require("dotenv");
@@ -325,13 +326,12 @@ app.post("/users", async (req, res) => {
 
     // Get name from users collection using email
     const user = await usersCollection.findOne({ email });
-console.log("Fetched user for organizer:", user);
-
+    console.log("Fetched user for organizer:", user);
 
     const newOrganizer = {
       email,
       ...rest,
-      name, // Include the name here
+      name: user?.name || "Unknown", // Include the name here
       status: (req.body.status || 'pending').toLowerCase()
     };
 
@@ -345,7 +345,7 @@ console.log("Fetched user for organizer:", user);
 
 
 
-app.get("/organizers", verifyFBToken, verifyAdmin, async (req, res) => {
+app.get("/organizers", verifyFBToken, async (req, res) => {
   try {
     const { status } = req.query;
     let query = {};
@@ -405,6 +405,29 @@ app.patch("/organizers/:id", verifyFBToken, verifyAdmin, async (req, res) => {
   } catch (err) {
     console.error("Failed to update organizer status:", err);
     res.status(500).send({ message: "Failed to update status", error: err });
+  }
+});
+
+app.put("/organizers/:id", async (req, res) => {
+  const id = req.params.id;
+  const { name, image, contact, email } = req.body;
+
+  try {
+    const result = await organizersCollection.updateOne(
+      { _id: new ObjectId(id) },
+      {
+        $set: {
+          name: name, 
+          image,
+          contact,
+          email
+        }
+      }
+    );
+    res.send(result);
+  } catch (err) {
+    console.error(err);
+    res.status(500).send({ message: "Failed to update organizer", error: err });
   }
 });
 
@@ -515,34 +538,25 @@ app.patch("/organizers/:id", verifyFBToken, verifyAdmin, async (req, res) => {
   const limit = parseInt(req.query.limit) || 10;   
   const skip = (page - 1) * limit;
 
-   const query = {
-    email: email, 
-    campName: { $regex: search, $options: 'i' } 
-  };
-
   if (!email) return res.status(400).send({ message: "Email is required" });
 
   try {
-    
     const query = { email: { $regex: `^${email}$`, $options: "i" } };
 
-    
     const total = await participantsCollection.countDocuments(query);
 
-     const result = await participantsCollection
-
-    
     const participants = await participantsCollection
       .find(query)
       .skip(skip)
       .limit(limit)
       .toArray();
 
-    
     const totalPages = Math.ceil(total / limit);
+    const results = participants;
 
     res.send({
-      participants,   
+      camps: participants,  
+      results,  
       totalPages,
       currentPage: page,
       totalItems: total,
@@ -551,6 +565,9 @@ app.patch("/organizers/:id", verifyFBToken, verifyAdmin, async (req, res) => {
     res.status(500).send({ message: "Failed to fetch participants", error: err });
   }
 });
+
+
+
 
 
 
