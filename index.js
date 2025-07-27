@@ -84,7 +84,8 @@ app.get('/users/search', verifyFBToken, async (req, res) => {
 
   try {
     // Use case-insensitive regex to match partial email
-    const user = await usersCollection.findOne({ email: { $regex: email, $options: 'i' } });
+    const user = await usersCollection.find({ email: { $regex: email, $options: 'i' } }).toArray();
+    
 
     if (!user) return res.status(404).send({ message: 'User not found' });
     res.send(user);
@@ -154,6 +155,55 @@ app.get("/my-camps", verifyFBToken, async (req, res) => {
     res.status(500).send({ message: "Failed to fetch camps", error: err });
   }
 });
+
+
+// app.get("/get-participants", verifyFBToken, async (req, res) => {
+//   const email = req.query.email;
+//   if (!email) return res.status(400).send({ message: "Email is required" });
+//   try {
+//     const camps = await participantsCollection.find({ 
+// participantEmail: email }).toArray();
+//     res.send(camps);
+//   } catch (err) {
+//     res.status(500).send({ message: "Failed to fetch camps", error: err });
+//   }
+// });
+
+
+
+
+
+
+
+
+app.get("/get-participants", verifyFBToken, async (req, res) => {
+  const email = req.query.email;
+  if (!email) return res.status(400).send({ message: "Email is required" });
+
+  const page = parseInt(req.query.page) || 1;
+  const limit = parseInt(req.query.limit) || 10;
+  const skip = (page - 1) * limit;
+
+  try {
+    const camps = await participantsCollection
+      .find({ participantEmail: email })
+      .skip(skip)
+      .limit(limit)
+      .toArray();
+
+    res.send(camps);
+  } catch (err) {
+    res.status(500).send({ message: "Failed to fetch camps", error: err });
+  }
+});
+
+
+
+
+
+
+
+
 
 // 2. PATCH Update a Camp
 app.patch("/update-camp/:id", verifyFBToken, async (req, res) => {
@@ -571,7 +621,7 @@ app.put("/organizers/:id", async (req, res) => {
 
 
 
-    app.delete("/participants/:id", verifyFBToken, verifyAdmin, async (req, res) => {
+    app.delete("/participants/:id", verifyFBToken, async (req, res) => {
       const id = req.params.id;
       try {
         const result = await participantsCollection.deleteOne({
