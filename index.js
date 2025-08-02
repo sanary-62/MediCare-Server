@@ -12,7 +12,10 @@ const app = express();
 const port = process.env.PORT || 5000;
 
 // Middleware
-app.use(cors());
+app.use(cors({
+  origin: ["https://medi-care-cd4fc.web.app" , "http://localhost:5173"],
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
+}));
 app.use(express.json());
 
 
@@ -41,7 +44,7 @@ const client = new MongoClient(uri, {
 
 async function run() {
   try {
-    await client.connect();
+    // await client.connect();
 
     const db = client.db("medi_care");
     const campsCollection = db.collection("camps");
@@ -148,11 +151,6 @@ app.get('/users/is-admin/:email', async (req, res) => {
 
 
 
-// existing code above remains unchanged
-
-// --- Add this below your other routes inside `run()` ---
-
-// 1. GET Camps by Organizer
 app.get("/my-camps", verifyFBToken, async (req, res) => {
   const email = req.query.email;
   if (!email) return res.status(400).send({ message: "Email is required" });
@@ -163,24 +161,6 @@ app.get("/my-camps", verifyFBToken, async (req, res) => {
     res.status(500).send({ message: "Failed to fetch camps", error: err });
   }
 });
-
-
-// app.get("/get-participants", verifyFBToken, async (req, res) => {
-//   const email = req.query.email;
-//   if (!email) return res.status(400).send({ message: "Email is required" });
-//   try {
-//     const camps = await participantsCollection.find({ 
-// participantEmail: email }).toArray();
-//     res.send(camps);
-//   } catch (err) {
-//     res.status(500).send({ message: "Failed to fetch camps", error: err });
-//   }
-// });
-
-
-
-
-
 
 
 
@@ -773,7 +753,7 @@ app.put("/organizers/:id", async (req, res) => {
       }
     });
 
-    await client.db("admin").command({ ping: 1 });
+    
     console.log(
       "Pinged your deployment. You successfully connected to MongoDB!"
     );
