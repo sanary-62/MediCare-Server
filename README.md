@@ -73,8 +73,8 @@ The server will run on: http://localhost:5000
 
 📚 Related Links
 
-Client GitHub Repo
-Live Client Site
+[Client GitHub Repo](https://github.com/sanary-62/MediCare-Client)
+[Live Client Site](https://medi-care-cd4fc.web.app/)
 
 
 
